@@ -37,6 +37,8 @@ namespace MizuLauncher
         private const int MaxQuickLaunchItems = 9; // 3x3 grid
 
         public ObservableCollection<string> QuickLaunchVersions { get; set; } = new();
+        public ObservableCollection<PlayerInfo> OnlinePlayers { get; set; } = new();
+        public ObservableCollection<PlayerInfo> OfflinePlayers { get; set; } = new();
 
         public MainWindow()
         {
@@ -59,13 +61,20 @@ namespace MizuLauncher
                 QuickLaunchVersions = new ObservableCollection<string>();
                 QuickLaunchItems.ItemsSource = QuickLaunchVersions;
 
-                string mcDirPath = @".\.minecraft";
+                OnlinePlayers = new ObservableCollection<PlayerInfo>();
+                ListOnlinePlayers.ItemsSource = OnlinePlayers;
+
+                OfflinePlayers = new ObservableCollection<PlayerInfo>();
+                ListOfflinePlayers.ItemsSource = OfflinePlayers;
+
+                string mcDirPath = @"C:\Users\Mizusumi\Personal\play\mc\.minecraft";
                 _baseMcPath = new MinecraftPath(mcDirPath);
                 _launcher = new MinecraftLauncher(_baseMcPath);
 
                 this.Loaded += MainWindow_Loaded;
                 QuickLaunchVersions.CollectionChanged += (s, e) => SaveConfig();
 
+                _ = UpdatePlayerUIFromState();
                 // 以前的抓屏更新事件 (LocationChanged, SizeChanged) 已经全部被扬了！
             }
             catch (Exception ex)
@@ -243,7 +252,7 @@ namespace MizuLauncher
 
         private int _currentBgType = 3;
         private string _currentCustomColor = "#FF1E1E1E";
-        private string _currentPlayerName = "MizuPlayer";
+        private string _currentPlayerName = "添加玩家";
 
         private void SaveConfig()
         {
@@ -254,7 +263,8 @@ namespace MizuLauncher
                     QuickLaunchVersions = QuickLaunchVersions.ToList(),
                     BackgroundType = _currentBgType,
                     CustomColor = _currentCustomColor,
-                    PlayerName = _currentPlayerName
+                    PlayerName = _currentPlayerName,
+                    Players = OnlinePlayers.Concat(OfflinePlayers).ToList()
                 };
                 string json = JsonSerializer.Serialize(config);
                 File.WriteAllText(ConfigFileName, json);
@@ -286,7 +296,29 @@ namespace MizuLauncher
                         }
                         _currentBgType = config.BackgroundType;
                         _currentCustomColor = config.CustomColor ?? "#FF1E1E1E";
-                        _currentPlayerName = config.PlayerName ?? "MizuPlayer";
+                        _currentPlayerName = config.PlayerName ?? "添加玩家";
+
+                        if (config.Players != null)
+                        {
+                            OnlinePlayers.Clear();
+                            OfflinePlayers.Clear();
+                            foreach (var p in config.Players)
+                            {
+                                if (p.IsOnline) OnlinePlayers.Add(p);
+                                else OfflinePlayers.Add(p);
+                                _ = LoadPlayerAvatarAsync(p);
+                            }
+                        }
+                        else
+                        {
+                            // 如果是第一次使用或者没有玩家列表，添加默认玩家
+                            if (_currentPlayerName != "添加玩家")
+                            {
+                                var defaultPlayer = new PlayerInfo { Name = _currentPlayerName, IsOnline = false };
+                                OfflinePlayers.Add(defaultPlayer);
+                                _ = LoadPlayerAvatarAsync(defaultPlayer);
+                            }
+                        }
                         
                         // Apply to UI state
                         UpdateBackgroundUIFromState();
@@ -298,6 +330,11 @@ namespace MizuLauncher
             {
                 System.Diagnostics.Debug.WriteLine($"Load config error: {ex.Message}");
             }
+        }
+
+        private async Task LoadPlayerAvatarAsync(PlayerInfo player)
+        {
+            player.Avatar = await LittleSkinFetcher.GetAvatarAsync(player.Name);
         }
 
         private void UpdateBackgroundUIFromState()
@@ -326,16 +363,10 @@ namespace MizuLauncher
             {
                 TxtPlayerName.Text = _currentPlayerName;
                 var avatar = await LittleSkinFetcher.GetAvatarAsync(_currentPlayerName);
-                if (avatar != null)
-                {
-                    ImgPlayerAvatar.Source = avatar;
-                }
-                else
-                {
-                    // 设置一个默认的史蒂夫头像 (简单的矩形组合模拟)
-                    // 或者你可以放一个默认的资源图片 
-                    ImgPlayerAvatar.Source = null; 
-                }
+                ImgPlayerAvatar.Source = avatar;
+                
+                // 如果是“添加玩家”，禁用启动按钮
+                BtnLaunch.IsEnabled = _currentPlayerName != "添加玩家";
             }
             catch (Exception ex)
             {
@@ -343,10 +374,61 @@ namespace MizuLauncher
             }
         }
 
-        private async void PlayerCard_Click(object sender, MouseButtonEventArgs e)
+        private void DeletePlayer_Click(object sender, RoutedEventArgs e)
         {
-            string input = Microsoft.VisualBasic.Interaction.InputBox("输入玩家离线 ID:", "添加离线玩家", _currentPlayerName);
-            if (!string.IsNullOrEmpty(input) && input != _currentPlayerName)
+            try
+            {
+                if (sender is MenuItem menuItem && menuItem.Parent is ContextMenu contextMenu)
+                {
+                    var border = contextMenu.PlacementTarget as Border;
+                    if (border != null && border.DataContext is PlayerInfo player)
+                    {
+                        if (player.IsOnline) OnlinePlayers.Remove(player);
+                        else OfflinePlayers.Remove(player);
+                        
+                        // 如果删掉的是当前玩家，重置为默认
+                        if (_currentPlayerName == player.Name)
+                        {
+                            _currentPlayerName = "添加玩家";
+                            _ = UpdatePlayerUIFromState();
+                        }
+                        SaveConfig();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Delete player error: " + ex.Message);
+            }
+        }
+
+        private void BtnAddPlayer_Click(object sender, RoutedEventArgs e)
+        {
+            // 关闭 Popup
+            BtnPlayerCard.IsChecked = false;
+
+            // 弹出输入框
+            string input = Microsoft.VisualBasic.Interaction.InputBox("输入玩家离线 ID:", "添加新离线玩家", "");
+            if (!string.IsNullOrEmpty(input))
+            {
+                AddOfflinePlayer(input);
+            }
+        }
+
+        private async void AddOfflinePlayer(string input)
+        {
+            if (!OnlinePlayers.Any(p => p.Name == input) && !OfflinePlayers.Any(p => p.Name == input))
+            {
+                var newPlayer = new PlayerInfo { Name = input, IsOnline = false };
+                OfflinePlayers.Add(newPlayer);
+                _currentPlayerName = input;
+                await UpdatePlayerUIFromState();
+                SaveConfig();
+                
+                // 异步加载列表中的头像
+                newPlayer.Avatar = await LittleSkinFetcher.GetAvatarAsync(input);
+            }
+            else
             {
                 _currentPlayerName = input;
                 await UpdatePlayerUIFromState();
@@ -354,12 +436,54 @@ namespace MizuLauncher
             }
         }
 
+        private async void ListPlayers_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ListBox lb && lb.SelectedItem is PlayerInfo selected)
+            {
+                _currentPlayerName = selected.Name;
+                await UpdatePlayerUIFromState();
+                SaveConfig();
+                BtnPlayerCard.IsChecked = false; // 关闭 Popup
+                lb.SelectedItem = null; // 重置选择
+            }
+        }
+
+        public class PlayerInfo : System.ComponentModel.INotifyPropertyChanged
+        {
+            private string _name = "";
+            private System.Windows.Media.Imaging.BitmapImage? _avatar;
+            private bool _isOnline = false;
+
+            public string Name 
+            { 
+                get => _name; 
+                set { _name = value; OnPropertyChanged(nameof(Name)); }
+            }
+
+            public bool IsOnline
+            {
+                get => _isOnline;
+                set { _isOnline = value; OnPropertyChanged(nameof(IsOnline)); }
+            }
+
+            [System.Text.Json.Serialization.JsonIgnore]
+            public System.Windows.Media.Imaging.BitmapImage? Avatar 
+            { 
+                get => _avatar; 
+                set { _avatar = value; OnPropertyChanged(nameof(Avatar)); }
+            }
+
+            public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+            protected void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+
         public class LauncherConfig
         {
             public System.Collections.Generic.List<string>? QuickLaunchVersions { get; set; }
             public int BackgroundType { get; set; } = 3; // Default Acrylic
             public string? CustomColor { get; set; } = "#FF1E1E1E";
-            public string PlayerName { get; set; } = "MizuPlayer";
+            public string PlayerName { get; set; } = "添加玩家";
+            public System.Collections.Generic.List<PlayerInfo>? Players { get; set; }
         }
 
         #endregion
@@ -593,6 +717,12 @@ namespace MizuLauncher
         {
             try
             {
+                if (_currentPlayerName == "添加玩家")
+                {
+                    MessageBox.Show("请先点击左下角添加玩家账号。");
+                    return;
+                }
+
                 if (ListVersions.SelectedItem != null)
                 {
                     LaunchGame(ListVersions.SelectedItem.ToString() ?? "");

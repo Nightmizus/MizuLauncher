@@ -22,8 +22,30 @@
 
     <Window.Resources>
         <CornerRadius x:Key="MainCornerRadius">12</CornerRadius>
-        <SolidColorBrush x:Key="CardBackground" Color="White" Opacity="0.1"/>
-        <SolidColorBrush x:Key="CardBorder" Color="White" Opacity="0.05"/>
+        <SolidColorBrush x:Key="CardBackground" Color="White" Opacity="0.03"/>
+        <SolidColorBrush x:Key="CardBorder" Color="White" Opacity="0.1"/>
+
+        <Style TargetType="Button" x:Key="BaseButtonStyle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding Tag}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#15FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#25FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="ModernScrollBar" TargetType="ScrollBar">
             <Setter Property="Width" Value="6"/>
@@ -31,13 +53,33 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
-                        <Grid x:Name="Bg" SnapsToDevicePixels="true">
+                        <Grid x:Name="Bg" SnapsToDevicePixels="true" Background="Transparent">
                             <Track x:Name="PART_Track" IsDirectionReversed="true" IsEnabled="{TemplateBinding IsEnabled}">
                                 <Track.Thumb>
                                     <Thumb x:Name="Thumb">
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border Background="#40FFFFFF" CornerRadius="3" Margin="1,0"/>
+                                                <Rectangle x:Name="ThumbBorder" Fill="#40FFFFFF" RadiusX="1.5" RadiusY="1.5" Width="3" HorizontalAlignment="Right"/>
+                                                <ControlTemplate.Triggers>
+                                                    <EventTrigger RoutedEvent="MouseEnter">
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="Width" To="6" Duration="0:0:0.1"/>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="RadiusX" To="3" Duration="0:0:0.1"/>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="RadiusY" To="3" Duration="0:0:0.1"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                    <EventTrigger RoutedEvent="MouseLeave">
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="Width" To="3" Duration="0:0:0.1"/>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="RadiusX" To="1.5" Duration="0:0:0.1"/>
+                                                                <DoubleAnimation Storyboard.TargetName="ThumbBorder" Storyboard.TargetProperty="RadiusY" To="1.5" Duration="0:0:0.1"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -123,13 +165,6 @@
                                            TextAlignment="Center"
                                            Margin="10"
                                            IsHitTestVisible="False"/>
-                                <TextBlock Text="快速启动" 
-                                           VerticalAlignment="Bottom" 
-                                           HorizontalAlignment="Right" 
-                                           Margin="0,0,10,8" 
-                                           FontSize="8" 
-                                           Foreground="#80FFFFFF"
-                                           IsHitTestVisible="False"/>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -138,6 +173,73 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#50FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PlayerListItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Margin="2">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="删除玩家" Click="DeletePlayer_Click"/>
+                                </ContextMenu>
+                            </Border.ContextMenu>
+                            <Grid Margin="{TemplateBinding Padding}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="24"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="20" Height="20" Background="#30FFFFFF" CornerRadius="3">
+                                     <Image Source="{Binding Avatar}" 
+                                            Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                 </Border>
+                                <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="13"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#15FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PlayerCardToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="{StaticResource CardBackground}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="{StaticResource MainCornerRadius}">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#15FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -195,8 +297,8 @@
                     <RadioButton x:Name="BtnMore" Content="更多" Style="{StaticResource NavButtonStyle}" Margin="10,0,0,0" Click="BtnMore_Click" GroupName="NavGroup"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,10,0" VerticalAlignment="Center">
-                    <Button Content="" FontFamily="Segoe MDL2 Assets" Background="Transparent" BorderThickness="0" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnMinimize_Click"/>
-                    <Button Content="" FontFamily="Segoe MDL2 Assets" Background="Transparent" BorderThickness="0" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnClose_Click"/>
+                    <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="8" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnMinimize_Click"/>
+                    <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="8" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnClose_Click"/>
                 </StackPanel>
             </Grid>
 
@@ -276,14 +378,14 @@
                                 <StackPanel x:Name="SolidColorSettings" Visibility="Collapsed">
                                      <TextBlock Text="选择颜色" FontSize="14" Margin="0,0,0,10"/>
                                      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                         <Button Content="黑色" Click="ColorBtn_Click" Tag="#FF000000" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深灰" Click="ColorBtn_Click" Tag="#FF1E1E1E" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深蓝" Click="ColorBtn_Click" Tag="#FF001220" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深紫" Click="ColorBtn_Click" Tag="#FF120020" Margin="0,0,5,0" Width="60" Height="30"/>
+                                         <Button Content="黑色" Click="ColorBtn_Click" Tag="#FF000000" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                         <Button Content="深灰" Click="ColorBtn_Click" Tag="#FF1E1E1E" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                         <Button Content="深蓝" Click="ColorBtn_Click" Tag="#FF001220" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                         <Button Content="深紫" Click="ColorBtn_Click" Tag="#FF120020" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
                                      </StackPanel>
                                      <StackPanel Orientation="Horizontal">
                                          <TextBox x:Name="TxtCustomColor" Width="100" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,0" Text="#FF1E1E1E"/>
-                                         <Button Content="应用自定义颜色" Click="ApplyCustomColor_Click" Width="120" Height="30"/>
+                                         <Button Content="应用自定义颜色" Click="ApplyCustomColor_Click" Style="{StaticResource BaseButtonStyle}" Width="120" Height="30"/>
                                      </StackPanel>
                                  </StackPanel>
                             </StackPanel>
@@ -300,44 +402,72 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
-                        Padding="12,8" VerticalAlignment="Center" Margin="6" BorderBrush="{StaticResource CardBorder}" BorderThickness="1"
-                        MouseLeftButtonDown="PlayerCard_Click" Cursor="Hand">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="32"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0" Width="30" Height="30" Background="#30FFFFFF" CornerRadius="4">
-                            <Image x:Name="ImgPlayerAvatar" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                <Grid Grid.Column="0">
+                    <ToggleButton x:Name="BtnPlayerCard" Style="{StaticResource PlayerCardToggleStyle}" 
+                                  VerticalAlignment="Center" Margin="6" Height="48">
+                        <Grid HorizontalAlignment="Stretch">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="32"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="30" Height="30" Background="#30FFFFFF" CornerRadius="4">
+                                <Image x:Name="ImgPlayerAvatar" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                                <TextBlock x:Name="TxtPlayerName" Text="添加玩家" FontSize="14" FontWeight="Bold" Foreground="White"/>
+                                <TextBlock Text="离线模式" FontSize="10" Foreground="#80FFFFFF"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Opacity="0.5">
+                                <Path Data="M 0 0 L 4 4 L 8 0" Stroke="White" StrokeThickness="1.5"/>
+                                <Path Data="M 0 4 L 4 0 L 8 4" Stroke="White" StrokeThickness="1.5" Margin="0,3,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </ToggleButton>
+
+                    <Popup x:Name="PopupPlayers" 
+                           PlacementTarget="{Binding ElementName=BtnPlayerCard}" 
+                           Placement="Top" 
+                           IsOpen="{Binding IsChecked, ElementName=BtnPlayerCard, Mode=TwoWay}"
+                           StaysOpen="False" 
+                           AllowsTransparency="True" 
+                           PopupAnimation="Slide" 
+                           VerticalOffset="-5">
+                        <Border Background="#E0202020" CornerRadius="12" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Width="208" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <Button Content="+" FontSize="18" FontWeight="Bold" Style="{StaticResource BaseButtonStyle}" Foreground="#80FFFFFF" Height="35" Click="BtnAddPlayer_Click"/>
+                                
+                                <TextBlock Text="正版账号" Foreground="#60FFFFFF" FontSize="10" Margin="10,5,0,2"/>
+                                <ListBox x:Name="ListOnlinePlayers" Background="Transparent" BorderThickness="0" MaxHeight="100"
+                                         ItemContainerStyle="{StaticResource PlayerListItemStyle}"
+                                         SelectionChanged="ListPlayers_SelectionChanged"/>
+
+                                <Border Background="#20FFFFFF" Height="1" Margin="10,5"/>
+
+                                <TextBlock Text="离线账号" Foreground="#60FFFFFF" FontSize="10" Margin="10,5,0,2"/>
+                                <ListBox x:Name="ListOfflinePlayers" Background="Transparent" BorderThickness="0" MaxHeight="150"
+                                         ItemContainerStyle="{StaticResource PlayerListItemStyle}"
+                                         SelectionChanged="ListPlayers_SelectionChanged"/>
+                            </StackPanel>
                         </Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
-                            <TextBlock x:Name="TxtPlayerName" Text="MizuPlayer" FontSize="14" FontWeight="Bold" Foreground="White"/>
-                            <TextBlock Text="离线模式" FontSize="10" Foreground="#80FFFFFF"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Opacity="0.5">
-                            <Path Data="M 0 0 L 4 4 L 8 0" Stroke="White" StrokeThickness="1.5"/>
-                            <Path Data="M 0 4 L 4 0 L 8 4" Stroke="White" StrokeThickness="1.5" Margin="0,3,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
+                    </Popup>
+                </Grid>
 
                 <Border Grid.Column="1" Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
                         Margin="6" VerticalAlignment="Center" Height="50" BorderBrush="{StaticResource CardBorder}" BorderThickness="1"
                         x:Name="BorderProgress" ClipToBounds="True">
                     <Grid>
-                        <Rectangle x:Name="RectProgress" Fill="#40FFFFFF" HorizontalAlignment="Left" Width="0"/>
+                        <Rectangle x:Name="RectProgress" Fill="#40FFFFFF" HorizontalAlignment="Left" Width="0" RadiusX="12" RadiusY="12"/>
                         <TextBlock x:Name="TxtProgressStep" Text="等待中..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="5,0"/>
                     </Grid>
                 </Border>
 
                 <Border Grid.Column="2" Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
                         Margin="6" VerticalAlignment="Center" Height="50" Width="50" BorderBrush="{StaticResource CardBorder}" BorderThickness="1">
-                    <TextBlock Text="+" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20" Foreground="#40FFFFFF" FontWeight="Bold"/>
+                    <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="{StaticResource MainCornerRadius}" Foreground="#40FFFFFF" FontSize="20" Width="50" Height="50"/>
                 </Border>
 
-                <Button x:Name="BtnLaunch" Grid.Column="3" Content="启动游戏" Click="BtnLaunch_Click" VerticalAlignment="Center" Height="50" Width="140" Margin="6" FontWeight="Bold" FontSize="15">
+                <Button x:Name="BtnLaunch" Grid.Column="3" Content="启动游戏" Click="BtnLaunch_Click" VerticalAlignment="Center" Height="50" Width="140" Margin="6" FontWeight="Bold" FontSize="15" IsEnabled="False">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="Bd" Background="White" CornerRadius="{StaticResource MainCornerRadius}">

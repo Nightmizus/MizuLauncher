@@ -64,6 +64,8 @@ namespace MizuLauncher
             return null;
         }
 
+        private static readonly string SteveCachePath = Path.Combine(CacheDir, "steve.png");
+
         public static async Task<BitmapImage?> GetAvatarAsync(string username)
         {
             try
@@ -78,7 +80,20 @@ namespace MizuLauncher
                 if (!File.Exists(cachePath))
                 {
                     string? skinUrl = await GetSkinUrlAsync(username);
-                    if (string.IsNullOrEmpty(skinUrl)) return null;
+                    if (string.IsNullOrEmpty(skinUrl))
+                    {
+                        // 如果获取不到皮肤，检查是否有 Steve 缓存，没有就下载一个
+                        if (!File.Exists(SteveCachePath))
+                        {
+                            try
+                            {
+                                byte[] steveBytes = await client.GetByteArrayAsync("https://littleskin.cn/textures/7399453957597893963"); // 一个经典的 Steve 皮肤 URL
+                                await File.WriteAllBytesAsync(SteveCachePath, steveBytes);
+                            }
+                            catch { return null; }
+                        }
+                        return ExtractAvatarFromSkin(SteveCachePath);
+                    }
 
                     byte[] skinBytes = await client.GetByteArrayAsync(skinUrl);
                     await File.WriteAllBytesAsync(cachePath, skinBytes);
