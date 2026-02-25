@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -74,7 +74,8 @@ namespace MizuLauncher
                 this.Loaded += MainWindow_Loaded;
                 QuickLaunchVersions.CollectionChanged += (s, e) => SaveConfig();
 
-                _ = UpdatePlayerUIFromState();
+                // 移除构造函数中的直接调用，改到 Loaded 事件中统一处理
+                // _ = UpdatePlayerUIFromState();
                 // 以前的抓屏更新事件 (LocationChanged, SizeChanged) 已经全部被扬了！
             }
             catch (Exception ex)
@@ -158,22 +159,28 @@ namespace MizuLauncher
                 IntPtr hwnd = new WindowInteropHelper(this).Handle;
                 SolidColorSettings.Visibility = Visibility.Collapsed;
                 MainRoot.Background = System.Windows.Media.Brushes.Transparent;
+                BgTint.Visibility = Visibility.Visible;
 
                 if (rb == RadioMica)
                 {
                     _currentBgType = 2;
                     EnableMicaBackdrop(hwnd, 2); // Mica
+                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x20, 0x00, 0x00, 0x00));
                 }
                 else if (rb == RadioAcrylic)
                 {
                     _currentBgType = 3;
                     EnableMicaBackdrop(hwnd, 3); // Acrylic
+                    // 亚克力颜色进一步加深 (调整为 #121212，且不透明度增加)
+                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0xB0, 0x12, 0x12, 0x12));
                 }
                 else if (rb == RadioSolid)
                 {
                     _currentBgType = 1;
                     EnableMicaBackdrop(hwnd, 1); // None
                     SolidColorSettings.Visibility = Visibility.Visible;
+                    BgTint.Visibility = Visibility.Collapsed; // 纯色模式下隐藏蒙层 
+                    TxtCustomColor.Text = _currentCustomColor;
                     // 使用当前记录的自定义颜色或默认色
                     try
                     {
@@ -250,9 +257,10 @@ namespace MizuLauncher
 
         #region Configuration Storage (Safe)
 
-        private int _currentBgType = 3;
+        private int _currentBgType = 3; // Default Acrylic
         private string _currentCustomColor = "#FF1E1E1E";
         private string _currentPlayerName = "添加玩家";
+        private bool _showDragHint = true;
 
         private void SaveConfig()
         {
@@ -264,7 +272,8 @@ namespace MizuLauncher
                     BackgroundType = _currentBgType,
                     CustomColor = _currentCustomColor,
                     PlayerName = _currentPlayerName,
-                    Players = OnlinePlayers.Concat(OfflinePlayers).ToList()
+                    Players = OnlinePlayers.Concat(OfflinePlayers).ToList(),
+                    ShowDragHint = _showDragHint
                 };
                 string json = JsonSerializer.Serialize(config);
                 File.WriteAllText(ConfigFileName, json);
@@ -297,6 +306,7 @@ namespace MizuLauncher
                         _currentBgType = config.BackgroundType;
                         _currentCustomColor = config.CustomColor ?? "#FF1E1E1E";
                         _currentPlayerName = config.PlayerName ?? "添加玩家";
+                        _showDragHint = config.ShowDragHint;
 
                         if (config.Players != null)
                         {
@@ -309,21 +319,18 @@ namespace MizuLauncher
                                 _ = LoadPlayerAvatarAsync(p);
                             }
                         }
-                        else
-                        {
-                            // 如果是第一次使用或者没有玩家列表，添加默认玩家
-                            if (_currentPlayerName != "添加玩家")
-                            {
-                                var defaultPlayer = new PlayerInfo { Name = _currentPlayerName, IsOnline = false };
-                                OfflinePlayers.Add(defaultPlayer);
-                                _ = LoadPlayerAvatarAsync(defaultPlayer);
-                            }
-                        }
                         
                         // Apply to UI state
                         UpdateBackgroundUIFromState();
                         _ = UpdatePlayerUIFromState();
                     }
+                }
+                else
+                {
+                    // No config file, ensure defaults are applied
+                    _showDragHint = true;
+                    UpdateBackgroundUIFromState();
+                    _ = UpdatePlayerUIFromState();
                 }
             }
             catch (Exception ex)
@@ -344,16 +351,64 @@ namespace MizuLauncher
             else if (_currentBgType == 1) RadioSolid.IsChecked = true;
             
             TxtCustomColor.Text = _currentCustomColor;
+            CheckShowDragHint.IsChecked = _showDragHint;
+            UpdateDragHintVisibility();
+
+            // 确保在加载配置后也应用材质设置
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                EnableMicaBackdrop(hwnd, _currentBgType);
+            }
             
             if (_currentBgType == 1)
             {
                 SolidColorSettings.Visibility = Visibility.Visible;
+                BgTint.Visibility = Visibility.Collapsed; // 纯色模式下隐藏蒙层 
                 try
                 {
                     var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(_currentCustomColor);
                     MainRoot.Background = new System.Windows.Media.SolidColorBrush(color);
                 }
                 catch { }
+            }
+            else
+            {
+                MainRoot.Background = System.Windows.Media.Brushes.Transparent;
+                BgTint.Visibility = Visibility.Visible;
+                
+                if (_currentBgType == 3) // Acrylic
+                {
+                    // 亚克力颜色进一步加深 (调整为 #121212，且不透明度增加)
+                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0xB0, 0x12, 0x12, 0x12));
+                }
+                else // Mica
+                {
+                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x20, 0x00, 0x00, 0x00));
+                }
+            }
+        }
+
+        private void CheckShowDragHint_Click(object sender, RoutedEventArgs e)
+        {
+            _showDragHint = CheckShowDragHint.IsChecked ?? true;
+            UpdateDragHintVisibility();
+            SaveConfig();
+        }
+
+        private void UpdateDragHintVisibility()
+        {
+            if (TxtDragHint == null) return;
+            
+            if (!_showDragHint)
+            {
+                TxtDragHint.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                // 如果启用了提示，则由 Style 中的 DataTrigger 决定是否显示（当磁贴数为0时显示）
+                // 这里我们手动刷新一下，或者由于 Style 已经绑定了，我们可以通过设置一个本地值来覆盖或清除
+                TxtDragHint.ClearValue(TextBlock.VisibilityProperty);
             }
         }
 
@@ -363,7 +418,10 @@ namespace MizuLauncher
             {
                 TxtPlayerName.Text = _currentPlayerName;
                 var avatar = await LittleSkinFetcher.GetAvatarAsync(_currentPlayerName);
-                ImgPlayerAvatar.Source = avatar;
+                if (avatar != null)
+                {
+                    ImgPlayerAvatar.Source = avatar;
+                }
                 
                 // 如果是“添加玩家”，禁用启动按钮
                 BtnLaunch.IsEnabled = _currentPlayerName != "添加玩家";
@@ -484,6 +542,7 @@ namespace MizuLauncher
             public string? CustomColor { get; set; } = "#FF1E1E1E";
             public string PlayerName { get; set; } = "添加玩家";
             public System.Collections.Generic.List<PlayerInfo>? Players { get; set; }
+            public bool ShowDragHint { get; set; } = true;
         }
 
         #endregion

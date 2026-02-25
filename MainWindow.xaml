@@ -23,7 +23,9 @@
     <Window.Resources>
         <CornerRadius x:Key="MainCornerRadius">12</CornerRadius>
         <SolidColorBrush x:Key="CardBackground" Color="White" Opacity="0.03"/>
-        <SolidColorBrush x:Key="CardBorder" Color="White" Opacity="0.1"/>
+        <SolidColorBrush x:Key="CardBorder" Color="Transparent"/>
+        <SolidColorBrush x:Key="VisibleBorderBrush" Color="White" Opacity="0.1"/>
+        <SolidColorBrush x:Key="SeparatorBrush" Color="White" Opacity="0.1"/>
 
         <Style TargetType="Button" x:Key="BaseButtonStyle">
             <Setter Property="Background" Value="Transparent"/>
@@ -221,9 +223,9 @@
         </Style>
 
         <Style x:Key="PlayerCardToggleStyle" TargetType="ToggleButton">
-            <Setter Property="Background" Value="{StaticResource CardBackground}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="12,8"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -276,7 +278,8 @@
 
     <Grid x:Name="MainRoot" Background="Transparent">
 
-        <Border Background="#20000000"/>
+        <!-- 默认亚克力深灰蒙层 -->
+        <Border x:Name="BgTint" Background="#B0121212"/>
 
         <Grid>
             <Grid.RowDefinitions>
@@ -285,24 +288,24 @@
                 <RowDefinition Height="75"/>
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Margin="6">
+            <Grid Grid.Row="0" Margin="12,12,12,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="220"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="MizuLauncher" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="25,0,0,0"/>
+                <TextBlock Text="MizuLauncher" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
                     <RadioButton x:Name="BtnHome" Content="首页" Style="{StaticResource NavButtonStyle}" IsChecked="True" Click="BtnHome_Click" GroupName="NavGroup"/>
                     <RadioButton x:Name="BtnMore" Content="更多" Style="{StaticResource NavButtonStyle}" Margin="10,0,0,0" Click="BtnMore_Click" GroupName="NavGroup"/>
                 </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,10,0" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,0,0" VerticalAlignment="Center">
                     <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="8" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnMinimize_Click"/>
                     <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="8" Foreground="White" Width="40" Height="40" FontSize="10" Click="BtnClose_Click"/>
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1" Margin="6,0">
+            <Grid Grid.Row="1" Margin="12,12,12,0">
                 <!-- 首页内容 -->
                 <Grid x:Name="HomeContent">
                     <Grid.ColumnDefinitions>
@@ -310,11 +313,11 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
-                            BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Margin="6"
+                    <Border Background="Transparent" CornerRadius="{StaticResource MainCornerRadius}" 
+                            BorderBrush="Transparent" BorderThickness="0" Margin="0,0,6,0"
                             AllowDrop="True" Drop="ListVersions_Drop" DragOver="ListVersions_DragOver">
-                        <DockPanel Margin="10">
-                            <TextBlock Text="版本列表" DockPanel.Dock="Top" FontSize="18" FontWeight="Bold" Margin="8,5,0,10"/>
+                        <DockPanel Margin="10,2,10,10">
+                            <TextBlock Text="版本列表" DockPanel.Dock="Top" FontSize="18" FontWeight="Bold" Margin="8,2,0,8"/>
                             <ListBox x:Name="ListVersions" Background="Transparent" BorderThickness="0" 
                                      ItemContainerStyle="{StaticResource VersionListItemStyle}"
                                      PreviewMouseLeftButtonDown="ListVersions_PreviewMouseLeftButtonDown"
@@ -322,9 +325,9 @@
                         </DockPanel>
                     </Border>
 
-                    <Border Grid.Column="1" Margin="6" AllowDrop="True" Drop="QuickLaunch_Drop" DragOver="QuickLaunch_DragOver" Background="Transparent">
+                    <Border Grid.Column="1" Margin="6,0,0,0" AllowDrop="True" Drop="QuickLaunch_Drop" DragOver="QuickLaunch_DragOver" Background="Transparent">
                         <Grid>
-                            <TextBlock Text="将左侧版本拖动到此处创建磁贴" 
+                            <TextBlock x:Name="TxtDragHint" Text="将左侧版本拖动到此处创建磁贴" 
                                        HorizontalAlignment="Center" 
                                        VerticalAlignment="Center" 
                                        Foreground="#40FFFFFF" 
@@ -341,7 +344,7 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <ItemsControl x:Name="QuickLaunchItems">
+                            <ItemsControl x:Name="QuickLaunchItems" Margin="0">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Columns="3" Rows="3"/>
@@ -352,7 +355,8 @@
                                         <Button Content="{Binding}" Style="{StaticResource QuickLaunchCardStyle}" 
                                                 Click="QuickLaunchCard_Click"
                                                 PreviewMouseLeftButtonDown="QuickLaunchCard_PreviewMouseLeftButtonDown"
-                                                MouseMove="QuickLaunchCard_MouseMove"/>
+                                                MouseMove="QuickLaunchCard_MouseMove"
+                                                Margin="6"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -362,39 +366,49 @@
 
                 <!-- 更多页面内容 -->
                 <Grid x:Name="MoreContent" Visibility="Collapsed">
-                    <Border Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
-                            BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Margin="6">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel Margin="20">
-                                <TextBlock Text="更多设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,20"/>
-                                
-                                <TextBlock Text="个性化背景" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                    <RadioButton x:Name="RadioMica" Content="云母 (Mica)" Click="RadioBg_Click" Margin="0,0,20,0" Foreground="White"/>
-                                    <RadioButton x:Name="RadioAcrylic" Content="亚克力 (Acrylic)" Click="RadioBg_Click" Margin="0,0,20,0" Foreground="White"/>
-                                    <RadioButton x:Name="RadioSolid" Content="纯色 (Solid)" Click="RadioBg_Click" Foreground="White"/>
-                                </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="20">
+                            <TextBlock Text="设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,20"/>
+                            
+                            <!-- 个性化 -->
+                            <Border Background="{StaticResource CardBackground}" CornerRadius="12" Padding="15" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <TextBlock Text="个性化背景" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,15"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                        <RadioButton x:Name="RadioMica" Content="云母 (Mica)" Click="RadioBg_Click" Margin="0,0,20,0" Foreground="White"/>
+                                        <RadioButton x:Name="RadioAcrylic" Content="亚克力 (Acrylic)" Click="RadioBg_Click" Margin="0,0,20,0" Foreground="White"/>
+                                        <RadioButton x:Name="RadioSolid" Content="纯色 (Solid)" Click="RadioBg_Click" Foreground="White"/>
+                                    </StackPanel>
 
-                                <StackPanel x:Name="SolidColorSettings" Visibility="Collapsed">
-                                     <TextBlock Text="选择颜色" FontSize="14" Margin="0,0,0,10"/>
-                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                         <Button Content="黑色" Click="ColorBtn_Click" Tag="#FF000000" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深灰" Click="ColorBtn_Click" Tag="#FF1E1E1E" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深蓝" Click="ColorBtn_Click" Tag="#FF001220" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
-                                         <Button Content="深紫" Click="ColorBtn_Click" Tag="#FF120020" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
-                                     </StackPanel>
-                                     <StackPanel Orientation="Horizontal">
-                                         <TextBox x:Name="TxtCustomColor" Width="100" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,0" Text="#FF1E1E1E"/>
-                                         <Button Content="应用自定义颜色" Click="ApplyCustomColor_Click" Style="{StaticResource BaseButtonStyle}" Width="120" Height="30"/>
-                                     </StackPanel>
-                                 </StackPanel>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Border>
+                                    <StackPanel x:Name="SolidColorSettings" Visibility="Collapsed">
+                                        <TextBlock Text="选择颜色" FontSize="14" Margin="0,0,0,10"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Button Content="黑色" Click="ColorBtn_Click" Tag="#FF000000" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                            <Button Content="深灰" Click="ColorBtn_Click" Tag="#FF1E1E1E" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                            <Button Content="深蓝" Click="ColorBtn_Click" Tag="#FF001220" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                            <Button Content="深紫" Click="ColorBtn_Click" Tag="#FF120020" Style="{StaticResource BaseButtonStyle}" Margin="0,0,5,0" Width="60" Height="30"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBox x:Name="TxtCustomColor" Width="100" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,0" Text="#FF1E1E1E" Background="#20FFFFFF" Foreground="White" BorderThickness="0"/>
+                                            <Button Content="应用" Click="ApplyCustomColor_Click" Style="{StaticResource BaseButtonStyle}" Width="80" Height="30" Tag="4"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 功能设置 -->
+                            <Border Background="{StaticResource CardBackground}" CornerRadius="12" Padding="15">
+                                <StackPanel>
+                                    <TextBlock Text="界面设置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,15"/>
+                                    <CheckBox x:Name="CheckShowDragHint" Content="显示磁贴拖动提示" Click="CheckShowDragHint_Click" Foreground="White" VerticalContentAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
 
-            <Grid Grid.Row="2" Margin="6,0,6,12">
+            <Grid Grid.Row="2" Margin="12,0,12,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="220"/>
                     <ColumnDefinition Width="*"/>
@@ -402,9 +416,12 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Grid Grid.Column="0">
+                <Grid Grid.Column="0" Margin="0,0,6,0">
+                    <!-- 仅在左侧版本列表与玩家选项之间显示的分隔线 -->
+                    <Border Height="1" Background="{StaticResource SeparatorBrush}" VerticalAlignment="Top" Margin="0,-6,0,0"/>
+                    
                     <ToggleButton x:Name="BtnPlayerCard" Style="{StaticResource PlayerCardToggleStyle}" 
-                                  VerticalAlignment="Center" Margin="6" Height="48">
+                                  VerticalAlignment="Center" Height="48">
                         <Grid HorizontalAlignment="Stretch">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="32"/>
@@ -433,7 +450,7 @@
                            AllowsTransparency="True" 
                            PopupAnimation="Slide" 
                            VerticalOffset="-5">
-                        <Border Background="#E0202020" CornerRadius="12" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Width="208" Margin="0,0,0,10">
+                        <Border Background="#E0202020" CornerRadius="12" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Width="220" Margin="0,0,0,10">
                             <StackPanel Margin="5">
                                 <Button Content="+" FontSize="18" FontWeight="Bold" Style="{StaticResource BaseButtonStyle}" Foreground="#80FFFFFF" Height="35" Click="BtnAddPlayer_Click"/>
                                 
@@ -454,7 +471,7 @@
                 </Grid>
 
                 <Border Grid.Column="1" Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
-                        Margin="6" VerticalAlignment="Center" Height="50" BorderBrush="{StaticResource CardBorder}" BorderThickness="1"
+                        Margin="6,0" VerticalAlignment="Center" Height="48" BorderBrush="{StaticResource VisibleBorderBrush}" BorderThickness="1"
                         x:Name="BorderProgress" ClipToBounds="True">
                     <Grid>
                         <Rectangle x:Name="RectProgress" Fill="#40FFFFFF" HorizontalAlignment="Left" Width="0" RadiusX="12" RadiusY="12"/>
@@ -463,15 +480,15 @@
                 </Border>
 
                 <Border Grid.Column="2" Background="{StaticResource CardBackground}" CornerRadius="{StaticResource MainCornerRadius}" 
-                        Margin="6" VerticalAlignment="Center" Height="50" Width="50" BorderBrush="{StaticResource CardBorder}" BorderThickness="1">
-                    <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="{StaticResource MainCornerRadius}" Foreground="#40FFFFFF" FontSize="20" Width="50" Height="50"/>
+                        Margin="6,0" VerticalAlignment="Center" Height="48" Width="48" BorderBrush="{StaticResource VisibleBorderBrush}" BorderThickness="1">
+                    <Button Content="" FontFamily="Segoe MDL2 Assets" Style="{StaticResource BaseButtonStyle}" Tag="{StaticResource MainCornerRadius}" Foreground="#40FFFFFF" FontSize="20" Width="48" Height="48"/>
                 </Border>
 
-                <Button x:Name="BtnLaunch" Grid.Column="3" Content="启动游戏" Click="BtnLaunch_Click" VerticalAlignment="Center" Height="50" Width="140" Margin="6" FontWeight="Bold" FontSize="15" IsEnabled="False">
+                <Button x:Name="BtnLaunch" Grid.Column="3" Content="启动游戏" Click="BtnLaunch_Click" VerticalAlignment="Center" Height="48" Width="140" Margin="6,0,0,0" FontWeight="Bold" FontSize="15" IsEnabled="False">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="Bd" Background="White" CornerRadius="{StaticResource MainCornerRadius}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="Black"/>
+                                <ContentPresenter x:Name="Presenter" HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="Black"/>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -479,7 +496,7 @@
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
-                                    <Setter Property="Foreground" Value="#60FFFFFF"/>
+                                    <Setter TargetName="Presenter" Property="TextElement.Foreground" Value="#60FFFFFF"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

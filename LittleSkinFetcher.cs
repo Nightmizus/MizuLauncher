@@ -18,46 +18,83 @@ namespace MizuLauncher
         {
             try
             {
-                // 1. 通过用户名获取 UUID
-                string uuidUrl = $"{ApiRoot}/api/users/profiles/minecraft/{username}";
-                HttpResponseMessage uuidResponse = await client.GetAsync(uuidUrl);
+                // 1. 优先尝试从正版 (Mojang) 获取
+                string mojangUuidUrl = $"https://api.mojang.com/users/profiles/minecraft/{username}";
+                HttpResponseMessage mojangResponse = await client.GetAsync(mojangUuidUrl);
                 
-                if (!uuidResponse.IsSuccessStatusCode) return null;
-
-                string uuidJson = await uuidResponse.Content.ReadAsStringAsync();
-                using JsonDocument uuidDoc = JsonDocument.Parse(uuidJson);
-                string uuid = uuidDoc.RootElement.GetProperty("id").GetString() ?? "";
-
-                // 2. 通过 UUID 获取 Profile（包含材质的 Base64 字符串）
-                string profileUrl = $"{ApiRoot}/sessionserver/session/minecraft/profile/{uuid}";
-                string profileJson = await client.GetStringAsync(profileUrl);
-                using JsonDocument profileDoc = JsonDocument.Parse(profileJson);
-                
-                string base64Textures = "";
-                foreach (JsonElement prop in profileDoc.RootElement.GetProperty("properties").EnumerateArray())
+                if (mojangResponse.IsSuccessStatusCode)
                 {
-                    if (prop.GetProperty("name").GetString() == "textures")
+                    string mojangUuidJson = await mojangResponse.Content.ReadAsStringAsync();
+                    using JsonDocument mojangUuidDoc = JsonDocument.Parse(mojangUuidJson);
+                    string uuid = mojangUuidDoc.RootElement.GetProperty("id").GetString() ?? "";
+
+                    string mojangProfileUrl = $"https://sessionserver.mojang.com/session/minecraft/profile/{uuid}";
+                    string mojangProfileJson = await client.GetStringAsync(mojangProfileUrl);
+                    using JsonDocument mojangProfileDoc = JsonDocument.Parse(mojangProfileJson);
+                    
+                    string base64Textures = "";
+                    foreach (JsonElement prop in mojangProfileDoc.RootElement.GetProperty("properties").EnumerateArray())
                     {
-                        base64Textures = prop.GetProperty("value").GetString() ?? "";
-                        break;
+                        if (prop.GetProperty("name").GetString() == "textures")
+                        {
+                            base64Textures = prop.GetProperty("value").GetString() ?? "";
+                            break;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(base64Textures))
+                    {
+                        byte[] decodedBytes = Convert.FromBase64String(base64Textures);
+                        string textureJson = Encoding.UTF8.GetString(decodedBytes);
+                        using JsonDocument textureDoc = JsonDocument.Parse(textureJson);
+
+                        if (textureDoc.RootElement.GetProperty("textures").TryGetProperty("SKIN", out JsonElement skinElement))
+                        {
+                            return skinElement.GetProperty("url").GetString();
+                        }
                     }
                 }
 
-                if (string.IsNullOrEmpty(base64Textures)) return null;
-
-                // 3. 解码 Base64 获取最终的皮肤 URL
-                byte[] decodedBytes = Convert.FromBase64String(base64Textures);
-                string textureJson = Encoding.UTF8.GetString(decodedBytes);
-                using JsonDocument textureDoc = JsonDocument.Parse(textureJson);
-
-                if (textureDoc.RootElement.GetProperty("textures").TryGetProperty("SKIN", out JsonElement skinElement))
+                // 2. 如果正版获取失败，尝试从 LittleSkin 获取
+                string uuidUrl = $"{ApiRoot}/api/users/profiles/minecraft/{username}";
+                HttpResponseMessage uuidResponse = await client.GetAsync(uuidUrl);
+                
+                if (uuidResponse.IsSuccessStatusCode)
                 {
-                    return skinElement.GetProperty("url").GetString();
+                    string uuidJson = await uuidResponse.Content.ReadAsStringAsync();
+                    using JsonDocument uuidDoc = JsonDocument.Parse(uuidJson);
+                    string uuid = uuidDoc.RootElement.GetProperty("id").GetString() ?? "";
+
+                    string profileUrl = $"{ApiRoot}/sessionserver/session/minecraft/profile/{uuid}";
+                    string profileJson = await client.GetStringAsync(profileUrl);
+                    using JsonDocument profileDoc = JsonDocument.Parse(profileJson);
+                    
+                    string base64Textures = "";
+                    foreach (JsonElement prop in profileDoc.RootElement.GetProperty("properties").EnumerateArray())
+                    {
+                        if (prop.GetProperty("name").GetString() == "textures")
+                        {
+                            base64Textures = prop.GetProperty("value").GetString() ?? "";
+                            break;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(base64Textures))
+                    {
+                        byte[] decodedBytes = Convert.FromBase64String(base64Textures);
+                        string textureJson = Encoding.UTF8.GetString(decodedBytes);
+                        using JsonDocument textureDoc = JsonDocument.Parse(textureJson);
+
+                        if (textureDoc.RootElement.GetProperty("textures").TryGetProperty("SKIN", out JsonElement skinElement))
+                        {
+                            return skinElement.GetProperty("url").GetString();
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"LittleSkin fetch error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Skin fetch error: {ex.Message}");
                 return null;
             }
 
@@ -115,14 +152,24 @@ namespace MizuLauncher
             {
                 BitmapImage fullSkin = new BitmapImage();
                 fullSkin.BeginInit();
-                fullSkin.UriSource = new Uri(skinPath);
+                fullSkin.UriSource = new Uri(skinPath, UriKind.Absolute);
                 fullSkin.CacheOption = BitmapCacheOption.OnLoad;
+                fullSkin.CreateOptions = BitmapCreateOptions.None;
                 fullSkin.EndInit();
+
+                if (fullSkin.PixelWidth == 0) 
+                {
+                    // 如果图片还没加载完，强制同步加载（或者至少等待）
+                    // 在 OnLoad 模式下，EndInit 之后应该已经加载了，但预防万一
+                }
 
                 // 提取头像区域: X=8, Y=8, Width=8, Height=8
                 // 注意：Minecraft 皮肤中头部的正面位于 (8, 8) 到 (16, 16)
                 CroppedBitmap cropped = new CroppedBitmap(fullSkin, new System.Windows.Int32Rect(8, 8, 8, 8));
                 
+                // 冻结以确保跨线程安全
+                cropped.Freeze();
+
                 // 将 CroppedBitmap 转回 BitmapImage 方便 UI 使用
                 BitmapImage avatar = new BitmapImage();
                 using (MemoryStream ms = new MemoryStream())
@@ -136,6 +183,7 @@ namespace MizuLauncher
                     avatar.StreamSource = ms;
                     avatar.CacheOption = BitmapCacheOption.OnLoad;
                     avatar.EndInit();
+                    avatar.Freeze(); // 冻结以确保跨线程安全
                 }
                 return avatar;
             }
