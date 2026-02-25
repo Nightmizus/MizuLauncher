@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -12,6 +12,8 @@ using Microsoft.VisualBasic;
 using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.ProcessBuilder;
+
+using System.Windows.Media.Animation;
 
 namespace MizuLauncher
 {
@@ -55,7 +57,7 @@ namespace MizuLauncher
                 WriteLog("=== 软件启动 ===");
                 InitializeComponent();
 
-                // 【核心改动】挂载系统底层句柄初始化事件，用于开启 Mica
+                // 挂载系统底层句柄初始化事件，用于开启 Mica/Acrylic
                 this.SourceInitialized += MainWindow_SourceInitialized;
 
                 QuickLaunchVersions = new ObservableCollection<string>();
@@ -72,6 +74,8 @@ namespace MizuLauncher
                 _launcher = new MinecraftLauncher(_baseMcPath);
 
                 this.Loaded += MainWindow_Loaded;
+                this.Activated += (s, e) => UpdateBackgroundUIFromState();
+                this.Deactivated += (s, e) => UpdateBackgroundUIFromState();
                 QuickLaunchVersions.CollectionChanged += (s, e) => SaveConfig();
 
                 // 移除构造函数中的直接调用，改到 Loaded 事件中统一处理
@@ -98,45 +102,14 @@ namespace MizuLauncher
             }
         }
 
-        #region Windows 11 Mica & DWM API (真正的毛玻璃)
-
         private void MainWindow_SourceInitialized(object? sender, EventArgs e)
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            EnableMicaBackdrop(hwnd, _currentBgType);
-        }
-
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
-
-        private void EnableMicaBackdrop(IntPtr hwnd, int type = 2)
-        {
-            try
+            if (hwnd != IntPtr.Zero)
             {
-                // 1. 强制窗口使用深色模式
-                int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-                int useDarkMode = 1;
-                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, Marshal.SizeOf(typeof(int)));
-
-                // 2. 启用材质
-                // DWMSBT_MAINWINDOW = 2 (Mica)
-                // DWMSBT_TRANSIENTWINDOW = 3 (Acrylic)
-                // DWMSBT_NONE = 1 (Solid)
-                int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-                DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, Marshal.SizeOf(typeof(int)));
-
-                // 3. 启用系统原生圆角
-                int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-                int DWMWCP_ROUND = 2;
-                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref DWMWCP_ROUND, Marshal.SizeOf(typeof(int)));
-            }
-            catch (Exception ex)
-            {
-                WriteLog($"DWM设置失败: {ex.Message}");
+                EnableMicaBackdrop(hwnd, _currentBgType);
             }
         }
-
-        #endregion
 
         #region Navigation and Background Settings
 
@@ -156,39 +129,11 @@ namespace MizuLauncher
         {
             if (sender is RadioButton rb)
             {
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                SolidColorSettings.Visibility = Visibility.Collapsed;
-                MainRoot.Background = System.Windows.Media.Brushes.Transparent;
-                BgTint.Visibility = Visibility.Visible;
+                if (rb == RadioMica) _currentBgType = 2;
+                else if (rb == RadioAcrylic) _currentBgType = 3;
+                else if (rb == RadioSolid) _currentBgType = 1;
 
-                if (rb == RadioMica)
-                {
-                    _currentBgType = 2;
-                    EnableMicaBackdrop(hwnd, 2); // Mica
-                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x20, 0x00, 0x00, 0x00));
-                }
-                else if (rb == RadioAcrylic)
-                {
-                    _currentBgType = 3;
-                    EnableMicaBackdrop(hwnd, 3); // Acrylic
-                    // 亚克力颜色进一步加深 (调整为 #121212，且不透明度增加)
-                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0xB0, 0x12, 0x12, 0x12));
-                }
-                else if (rb == RadioSolid)
-                {
-                    _currentBgType = 1;
-                    EnableMicaBackdrop(hwnd, 1); // None
-                    SolidColorSettings.Visibility = Visibility.Visible;
-                    BgTint.Visibility = Visibility.Collapsed; // 纯色模式下隐藏蒙层 
-                    TxtCustomColor.Text = _currentCustomColor;
-                    // 使用当前记录的自定义颜色或默认色
-                    try
-                    {
-                        var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(_currentCustomColor);
-                        MainRoot.Background = new System.Windows.Media.SolidColorBrush(color);
-                    }
-                    catch { }
-                }
+                UpdateBackgroundUIFromState();
                 SaveConfig();
             }
         }
@@ -346,6 +291,8 @@ namespace MizuLauncher
 
         private void UpdateBackgroundUIFromState()
         {
+            if (RadioMica == null || RadioAcrylic == null || RadioSolid == null) return;
+
             if (_currentBgType == 2) RadioMica.IsChecked = true;
             else if (_currentBgType == 3) RadioAcrylic.IsChecked = true;
             else if (_currentBgType == 1) RadioSolid.IsChecked = true;
@@ -354,21 +301,31 @@ namespace MizuLauncher
             CheckShowDragHint.IsChecked = _showDragHint;
             UpdateDragHintVisibility();
 
-            // 确保在加载配置后也应用材质设置
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd != IntPtr.Zero)
+            if (hwnd == IntPtr.Zero) return;
+
+            // 核心逻辑：
+            // 1. 如果用户选择亚克力 (3)，则根据是否聚焦切换：聚焦用亚克力 (3)，不聚焦用云母 (2)
+            // 2. 如果用户选择云母 (2)，则始终用云母 (2)
+            // 3. 纯色 (1) 正常切换
+            int effectiveType = _currentBgType;
+            if (_currentBgType == 3 && !this.IsActive)
             {
-                EnableMicaBackdrop(hwnd, _currentBgType);
+                effectiveType = 2; // 亚克力失去焦点自动切为云母
             }
+            
+            EnableMicaBackdrop(hwnd, effectiveType);
             
             if (_currentBgType == 1)
             {
                 SolidColorSettings.Visibility = Visibility.Visible;
-                BgTint.Visibility = Visibility.Collapsed; // 纯色模式下隐藏蒙层 
+                BgTint.Visibility = Visibility.Visible; // 纯色模式也启用蒙层用于过渡
+                MainRoot.Background = System.Windows.Media.Brushes.Transparent; // 保持 Root 透明
+
                 try
                 {
                     var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(_currentCustomColor);
-                    MainRoot.Background = new System.Windows.Media.SolidColorBrush(color);
+                    AnimateBgTint(color);
                 }
                 catch { }
             }
@@ -376,16 +333,76 @@ namespace MizuLauncher
             {
                 MainRoot.Background = System.Windows.Media.Brushes.Transparent;
                 BgTint.Visibility = Visibility.Visible;
-                
-                if (_currentBgType == 3) // Acrylic
+
+                System.Windows.Media.Color targetColor;
+                // 仅亚克力模式在失去焦点时执行背景色切换 (切为深灰蓝并辅以云母底层)
+                if (_currentBgType == 3 && !this.IsActive)
                 {
-                    // 亚克力颜色进一步加深 (调整为 #121212，且不透明度增加)
-                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0xB0, 0x12, 0x12, 0x12));
+                    // 失去焦点时的亚克力回退色：稍微浅一点的深灰蓝 (#252A2E)
+                    targetColor = System.Windows.Media.Color.FromRgb(0x25, 0x2A, 0x2E);
                 }
-                else // Mica
+                else if (_currentBgType == 3) // Acrylic Active
                 {
-                    BgTint.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x20, 0x00, 0x00, 0x00));
+                    targetColor = System.Windows.Media.Color.FromArgb(0x60, 0x00, 0x00, 0x00);
                 }
+                else // Mica (无论聚焦与否都保持云母遮罩色)
+                {
+                    targetColor = System.Windows.Media.Color.FromArgb(0x15, 0x00, 0x00, 0x00);
+                }
+
+                AnimateBgTint(targetColor);
+            }
+        }
+
+        private void AnimateBgTint(System.Windows.Media.Color targetColor)
+        {
+            if (BgTint.Background is not System.Windows.Media.SolidColorBrush currentBrush)
+            {
+                BgTint.Background = new System.Windows.Media.SolidColorBrush(targetColor);
+                return;
+            }
+
+            // 如果当前是冻结的，我们需要创建一个新的
+            if (currentBrush.IsFrozen)
+            {
+                currentBrush = new System.Windows.Media.SolidColorBrush(currentBrush.Color);
+                BgTint.Background = currentBrush;
+            }
+
+            ColorAnimation animation = new ColorAnimation
+            {
+                To = targetColor,
+                Duration = TimeSpan.FromMilliseconds(400),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+
+            currentBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, animation);
+        }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
+        private void EnableMicaBackdrop(IntPtr hwnd, int type = 2)
+        {
+            try
+            {
+                // 1. 强制窗口使用深色模式
+                int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+                int useDarkMode = 1;
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, Marshal.SizeOf(typeof(int)));
+
+                // 2. 启用材质
+                int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+                DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, Marshal.SizeOf(typeof(int)));
+
+                // 3. 启用系统原生圆角
+                int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+                int DWMWCP_ROUND = 2;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref DWMWCP_ROUND, Marshal.SizeOf(typeof(int)));
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"DWM设置失败: {ex.Message}");
             }
         }
 
@@ -417,10 +434,30 @@ namespace MizuLauncher
             try
             {
                 TxtPlayerName.Text = _currentPlayerName;
+                
+                // 立即显示默认状态/清除旧头像，防止切换时残留上一个玩家的头像
+                ImgPlayerAvatar.Source = null;
+
+                var currentPlayer = OnlinePlayers.FirstOrDefault(p => p.Name == _currentPlayerName)
+                                  ?? OfflinePlayers.FirstOrDefault(p => p.Name == _currentPlayerName);
+
+                if (currentPlayer != null)
+                {
+                    TxtPlayerType.Text = currentPlayer.IsOnline ? "正版账号" : "离线模式";
+                }
+                else
+                {
+                    TxtPlayerType.Text = "离线模式";
+                }
+
                 var avatar = await LittleSkinFetcher.GetAvatarAsync(_currentPlayerName);
                 if (avatar != null)
                 {
                     ImgPlayerAvatar.Source = avatar;
+                }
+                else
+                {
+                    ImgPlayerAvatar.Source = null; // 清空头像或显示默认占位
                 }
                 
                 // 如果是“添加玩家”，禁用启动按钮
@@ -465,30 +502,36 @@ namespace MizuLauncher
             // 关闭 Popup
             BtnPlayerCard.IsChecked = false;
 
-            // 弹出输入框
-            string input = Microsoft.VisualBasic.Interaction.InputBox("输入玩家离线 ID:", "添加新离线玩家", "");
-            if (!string.IsNullOrEmpty(input))
+            // 弹出自定义添加账号窗口
+            var addWindow = new AddAccountWindow();
+            addWindow.Owner = this;
+            if (addWindow.ShowDialog() == true && addWindow.ResultPlayer != null)
             {
-                AddOfflinePlayer(input);
+                AddPlayer(addWindow.ResultPlayer);
             }
         }
 
-        private async void AddOfflinePlayer(string input)
+        private async void AddPlayer(PlayerInfo player)
         {
-            if (!OnlinePlayers.Any(p => p.Name == input) && !OfflinePlayers.Any(p => p.Name == input))
+            // 检查是否已存在
+            var existing = OnlinePlayers.FirstOrDefault(p => p.Name == player.Name && p.IsOnline == player.IsOnline)
+                        ?? OfflinePlayers.FirstOrDefault(p => p.Name == player.Name && p.IsOnline == player.IsOnline);
+
+            if (existing == null)
             {
-                var newPlayer = new PlayerInfo { Name = input, IsOnline = false };
-                OfflinePlayers.Add(newPlayer);
-                _currentPlayerName = input;
+                if (player.IsOnline) OnlinePlayers.Add(player);
+                else OfflinePlayers.Add(player);
+                
+                _currentPlayerName = player.Name;
                 await UpdatePlayerUIFromState();
                 SaveConfig();
                 
-                // 异步加载列表中的头像
-                newPlayer.Avatar = await LittleSkinFetcher.GetAvatarAsync(input);
+                // 异步加载头像
+                player.Avatar = await LittleSkinFetcher.GetAvatarAsync(player.Name);
             }
             else
             {
-                _currentPlayerName = input;
+                _currentPlayerName = existing.Name;
                 await UpdatePlayerUIFromState();
                 SaveConfig();
             }
@@ -511,6 +554,8 @@ namespace MizuLauncher
             private string _name = "";
             private System.Windows.Media.Imaging.BitmapImage? _avatar;
             private bool _isOnline = false;
+            private string? _uuid;
+            private string? _accessToken;
 
             public string Name 
             { 
@@ -522,6 +567,18 @@ namespace MizuLauncher
             {
                 get => _isOnline;
                 set { _isOnline = value; OnPropertyChanged(nameof(IsOnline)); }
+            }
+
+            public string? UUID
+            {
+                get => _uuid;
+                set { _uuid = value; OnPropertyChanged(nameof(UUID)); }
+            }
+
+            public string? AccessToken
+            {
+                get => _accessToken;
+                set { _accessToken = value; OnPropertyChanged(nameof(AccessToken)); }
             }
 
             [System.Text.Json.Serialization.JsonIgnore]
@@ -747,11 +804,30 @@ namespace MizuLauncher
                     });
                 };
 
+                var currentPlayer = OnlinePlayers.FirstOrDefault(p => p.Name == _currentPlayerName)
+                                  ?? OfflinePlayers.FirstOrDefault(p => p.Name == _currentPlayerName);
+
+                MSession session;
+                if (currentPlayer != null && currentPlayer.IsOnline && !string.IsNullOrEmpty(currentPlayer.AccessToken))
+                {
+                    session = new MSession
+                    {
+                        Username = currentPlayer.Name,
+                        UUID = currentPlayer.UUID,
+                        AccessToken = currentPlayer.AccessToken,
+                        UserType = "msa"
+                    };
+                }
+                else
+                {
+                    session = MSession.CreateOfflineSession(_currentPlayerName);
+                }
+
                 var launchOption = new MLaunchOption
                 {
                     Path = isolatedPath,
                     MaximumRamMb = 4096,
-                    Session = MSession.CreateOfflineSession(_currentPlayerName)
+                    Session = session
                 };
 
                 TxtProgressStep.Text = "正在校验资源...";

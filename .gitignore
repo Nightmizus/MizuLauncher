@@ -421,5 +421,5 @@ FodyWeavers.xsd
 .minecraft/
 
 # vscode
-.vs/
+.vscode/
 

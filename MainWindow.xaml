@@ -278,8 +278,8 @@
 
     <Grid x:Name="MainRoot" Background="Transparent">
 
-        <!-- 默认亚克力深灰蒙层 -->
-        <Border x:Name="BgTint" Background="#B0121212"/>
+        <!-- 默认亚克力纯黑蒙层 -->
+        <Border x:Name="BgTint" Background="#60000000" IsHitTestVisible="False"/>
 
         <Grid>
             <Grid.RowDefinitions>
@@ -433,7 +433,7 @@
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
                                 <TextBlock x:Name="TxtPlayerName" Text="添加玩家" FontSize="14" FontWeight="Bold" Foreground="White"/>
-                                <TextBlock Text="离线模式" FontSize="10" Foreground="#80FFFFFF"/>
+                                <TextBlock x:Name="TxtPlayerType" Text="离线模式" FontSize="10" Foreground="#80FFFFFF"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2" VerticalAlignment="Center" Opacity="0.5">
                                 <Path Data="M 0 0 L 4 4 L 8 0" Stroke="White" StrokeThickness="1.5"/>
