@@ -419,3 +419,7 @@ FodyWeavers.xsd
 
 # Minecraft
 .minecraft/
+
+# vscode
+.vs/
+
