@@ -153,16 +153,116 @@ namespace MizuLauncher
             }
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             try
             {
-                LoadConfig();
-                RefreshVersionList();
+                // 将所有 IO 密集型操作放到后台线程
+                await Task.Run(() => 
+                {
+                    LoadConfigBackground();
+                    RefreshVersionListBackground();
+                });
+                
+                await UpdatePlayerUIFromState();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Loaded error: {ex.Message}");
+                WriteLog($"Loaded error: {ex.Message}");
+            }
+        }
+
+        private void RefreshVersionListBackground()
+        {
+            try
+            {
+                if (_baseMcPath == null) return;
+                string versionsDir = _baseMcPath.Versions;
+                List<string> versions = new List<string>();
+                if (Directory.Exists(versionsDir))
+                {
+                    string[] localVersionDirs = Directory.GetDirectories(versionsDir);
+                    foreach (string dir in localVersionDirs)
+                    {
+                        versions.Add(Path.GetFileName(dir));
+                    }
+                }
+
+                Dispatcher.Invoke(() => 
+                {
+                    ListVersions.Items.Clear();
+                    foreach (var v in versions)
+                    {
+                        ListVersions.Items.Add(v);
+                    }
+                    if (ListVersions.Items.Count > 0)
+                    {
+                        ListVersions.SelectedIndex = 0;
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"后台刷新版本列表异常: {ex.Message}");
+            }
+        }
+
+        private void LoadConfigBackground()
+        {
+            try
+            {
+                if (File.Exists(ConfigFileName))
+                {
+                    string json = File.ReadAllText(ConfigFileName);
+                    var config = JsonSerializer.Deserialize<LauncherConfig>(json);
+                    if (config != null)
+                    {
+                        // 准备数据
+                        var ql = config.QuickLaunchVersions ?? new List<string>();
+                        var players = config.Players ?? new List<PlayerInfo>();
+
+                        // 回到 UI 线程更新
+                        Dispatcher.Invoke(() => 
+                        {
+                            QuickLaunchVersions.Clear();
+                            foreach (var v in ql)
+                            {
+                                if (QuickLaunchVersions.Count < MaxQuickLaunchItems)
+                                    QuickLaunchVersions.Add(v);
+                            }
+
+                            _currentBgType = config.BackgroundType;
+                            _currentCustomColor = config.CustomColor ?? "#FF1E1E1E";
+                            _currentPlayerName = config.PlayerName ?? "添加玩家";
+                            _showDragHint = config.ShowDragHint;
+
+                            OnlinePlayers.Clear();
+                            OfflinePlayers.Clear();
+                            foreach (var p in players)
+                            {
+                                if (p.IsOnline) OnlinePlayers.Add(p);
+                                else OfflinePlayers.Add(p);
+                                _ = LoadPlayerAvatarAsync(p);
+                            }
+
+                            UpdateBackgroundUIFromState();
+                            UpdateDragHintVisibility();
+                        });
+                    }
+                }
+                else
+                {
+                    Dispatcher.Invoke(() => 
+                    {
+                        _showDragHint = true;
+                        UpdateBackgroundUIFromState();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"后台加载配置异常: {ex.Message}");
             }
         }
 
@@ -181,7 +281,6 @@ namespace MizuLauncher
         {
             HomeContent.Visibility = Visibility.Visible;
             DownloadContent.Visibility = Visibility.Collapsed;
-            AIChatContent.Visibility = Visibility.Collapsed;
             MoreContent.Visibility = Visibility.Collapsed;
         }
 
@@ -189,15 +288,6 @@ namespace MizuLauncher
         {
             HomeContent.Visibility = Visibility.Collapsed;
             DownloadContent.Visibility = Visibility.Visible;
-            AIChatContent.Visibility = Visibility.Collapsed;
-            MoreContent.Visibility = Visibility.Collapsed;
-        }
-
-        private void BtnAIChat_Click(object sender, RoutedEventArgs e)
-        {
-            HomeContent.Visibility = Visibility.Collapsed;
-            DownloadContent.Visibility = Visibility.Collapsed;
-            AIChatContent.Visibility = Visibility.Visible;
             MoreContent.Visibility = Visibility.Collapsed;
         }
 
@@ -205,7 +295,6 @@ namespace MizuLauncher
         {
             HomeContent.Visibility = Visibility.Collapsed;
             DownloadContent.Visibility = Visibility.Collapsed;
-            AIChatContent.Visibility = Visibility.Collapsed;
             MoreContent.Visibility = Visibility.Visible;
         }
 
@@ -394,7 +483,7 @@ namespace MizuLauncher
 
                 task.Progress = 100;
                 task.Status = "安装完成";
-                RefreshVersionList();
+                RefreshVersionListBackground();
             }
             catch (Exception ex)
             {
@@ -567,89 +656,6 @@ namespace MizuLauncher
 
         #endregion
 
-        private void TxtDeepSeekApiKey_PasswordChanged(object sender, RoutedEventArgs e)
-        {
-            if (sender is PasswordBox pb)
-            {
-                _deepSeekApiKey = pb.Password;
-                SaveConfig();
-            }
-        }
-
-        private void ComboDeepSeekModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem item)
-            {
-                _deepSeekModel = item.Content.ToString() ?? "deepseek-chat";
-                SaveConfig();
-            }
-        }
-
-        private async void BtnAIChatSend_Click(object sender, RoutedEventArgs e)
-        {
-            string userInput = TxtAIChatInput.Text.Trim();
-            if (string.IsNullOrEmpty(userInput)) return;
-
-            if (string.IsNullOrEmpty(_deepSeekApiKey))
-            {
-                MessageBox.Show("请先在“更多”页面设置 DeepSeek API Key。");
-                return;
-            }
-
-            TxtAIResponse.Text = "思考中...";
-            TxtAIChatInput.Clear();
-
-            try
-            {
-                string aiResponse = await CallDeepSeekApi(userInput);
-                TxtAIResponse.Text = aiResponse;
-            }
-            catch (Exception ex)
-            {
-                TxtAIResponse.Text = $"错误: {ex.Message}";
-            }
-        }
-
-        private void TxtAIChatInput_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                BtnAIChatSend_Click(sender, e);
-            }
-        }
-
-        private async System.Threading.Tasks.Task<string> CallDeepSeekApi(string userInput)
-        {
-            using (var client = new System.Net.Http.HttpClient())
-            {
-                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _deepSeekApiKey);
-                
-                var requestBody = new
-                {
-                    model = _deepSeekModel,
-                    messages = new[] { new { role = "user", content = userInput } },
-                    stream = false
-                };
-
-                string json = JsonSerializer.Serialize(requestBody);
-                var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-                var response = await client.PostAsync("https://api.deepseek.com/v1/chat/completions", content);
-                string responseJson = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var doc = JsonDocument.Parse(responseJson);
-                    return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "无响应内容";
-                }
-                else
-                {
-                    return $"API 请求失败: {response.StatusCode}\n{responseJson}";
-                }
-            }
-        }
-
-
         private void RadioBg_Click(object sender, RoutedEventArgs e)
         {
             if (sender is RadioButton rb)
@@ -697,42 +703,12 @@ namespace MizuLauncher
 
         #endregion
 
-        private void RefreshVersionList()
-        {
-            try
-            {
-                if (_baseMcPath == null) return;
-                ListVersions.Items.Clear();
-                string versionsDir = _baseMcPath.Versions;
-                if (Directory.Exists(versionsDir))
-                {
-                    string[] localVersionDirs = Directory.GetDirectories(versionsDir);
-                    foreach (string dir in localVersionDirs)
-                    {
-                        string versionName = Path.GetFileName(dir);
-                        ListVersions.Items.Add(versionName);
-                    }
-                }
-
-                if (ListVersions.Items.Count > 0)
-                {
-                    ListVersions.SelectedIndex = 0;
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("扫描本地版本失败: " + ex.Message);
-            }
-        }
-
         #region Configuration Storage (Safe)
 
         private int _currentBgType = 3; // Default Acrylic
         private string _currentCustomColor = "#FF1E1E1E";
         private string _currentPlayerName = "添加玩家";
         private bool _showDragHint = true;
-        private string _deepSeekApiKey = "";
-        private string _deepSeekModel = "deepseek-chat";
 
         private void SaveConfig()
         {
@@ -745,9 +721,7 @@ namespace MizuLauncher
                     CustomColor = _currentCustomColor,
                     PlayerName = _currentPlayerName,
                     Players = OnlinePlayers.Concat(OfflinePlayers).ToList(),
-                    ShowDragHint = _showDragHint,
-                    DeepSeekApiKey = _deepSeekApiKey,
-                    DeepSeekModel = _deepSeekModel
+                    ShowDragHint = _showDragHint
                 };
                 string json = JsonSerializer.Serialize(config);
                 File.WriteAllText(ConfigFileName, json);
@@ -758,75 +732,9 @@ namespace MizuLauncher
             }
         }
 
-        private void LoadConfig()
-        {
-            try
-            {
-                if (File.Exists(ConfigFileName))
-                {
-                    string json = File.ReadAllText(ConfigFileName);
-                    var config = JsonSerializer.Deserialize<LauncherConfig>(json);
-                    if (config != null)
-                    {
-                        if (config.QuickLaunchVersions != null)
-                        {
-                            QuickLaunchVersions.Clear();
-                            foreach (var v in config.QuickLaunchVersions)
-                            {
-                                if (QuickLaunchVersions.Count < MaxQuickLaunchItems)
-                                    QuickLaunchVersions.Add(v);
-                            }
-                        }
-                        _currentBgType = config.BackgroundType;
-                        _currentCustomColor = config.CustomColor ?? "#FF1E1E1E";
-                        _currentPlayerName = config.PlayerName ?? "添加玩家";
-                        _showDragHint = config.ShowDragHint;
-                        _deepSeekApiKey = config.DeepSeekApiKey ?? "";
-                        _deepSeekModel = config.DeepSeekModel ?? "deepseek-chat";
-
-                        TxtDeepSeekApiKey.Password = _deepSeekApiKey;
-                        foreach (ComboBoxItem item in ComboDeepSeekModel.Items)
-                        {
-                            if (item.Content.ToString() == _deepSeekModel)
-                            {
-                                ComboDeepSeekModel.SelectedItem = item;
-                                break;
-                            }
-                        }
-
-                        if (config.Players != null)
-                        {
-                            OnlinePlayers.Clear();
-                            OfflinePlayers.Clear();
-                            foreach (var p in config.Players)
-                            {
-                                if (p.IsOnline) OnlinePlayers.Add(p);
-                                else OfflinePlayers.Add(p);
-                                _ = LoadPlayerAvatarAsync(p);
-                            }
-                        }
-                        
-                        // Apply to UI state
-                        UpdateBackgroundUIFromState();
-                        _ = UpdatePlayerUIFromState();
-                    }
-                }
-                else
-                {
-                    // No config file, ensure defaults are applied
-                    _showDragHint = true;
-                    UpdateBackgroundUIFromState();
-                    _ = UpdatePlayerUIFromState();
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Load config error: {ex.Message}");
-            }
-        }
-
         private async Task LoadPlayerAvatarAsync(PlayerInfo player)
         {
+            if (player.Name == null) return;
             player.Avatar = await LittleSkinFetcher.GetAvatarAsync(player.Name);
         }
 
@@ -841,6 +749,36 @@ namespace MizuLauncher
             TxtCustomColor.Text = _currentCustomColor;
             CheckShowDragHint.IsChecked = _showDragHint;
             UpdateDragHintVisibility();
+
+            // 根据背景色明度自动调整文字颜色资源
+            try
+            {
+                System.Windows.Media.Color bgColor;
+                if (_currentBgType == 1) // Solid
+                {
+                    bgColor = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(_currentCustomColor);
+                }
+                else // Mica/Acrylic (通常是深色)
+                {
+                    bgColor = System.Windows.Media.Color.FromRgb(30, 30, 30);
+                }
+
+                // 计算感知亮度 (Rec. 601)
+                double brightness = (0.299 * bgColor.R + 0.587 * bgColor.G + 0.114 * bgColor.B) / 255;
+                
+                bool isLightBackground = brightness > 0.6;
+                System.Windows.Media.Color textColor = isLightBackground ? System.Windows.Media.Colors.Black : System.Windows.Media.Colors.White;
+                System.Windows.Media.Color controlColor = isLightBackground ? System.Windows.Media.Colors.Black : System.Windows.Media.Colors.White;
+
+                this.Resources["PrimaryTextBrush"] = new System.Windows.Media.SolidColorBrush(textColor);
+                this.Resources["SecondaryTextBrush"] = new System.Windows.Media.SolidColorBrush(textColor) { Opacity = 0.6 };
+                this.Resources["PlaceholderTextBrush"] = new System.Windows.Media.SolidColorBrush(textColor) { Opacity = 0.4 };
+                this.Resources["ControlBackgroundBrush"] = new System.Windows.Media.SolidColorBrush(controlColor) { Opacity = 0.1 };
+                this.Resources["ControlMouseOverBrush"] = new System.Windows.Media.SolidColorBrush(controlColor) { Opacity = 0.15 };
+                this.Resources["VisibleBorderBrush"] = new System.Windows.Media.SolidColorBrush(controlColor) { Opacity = 0.1 };
+                this.Resources["SeparatorBrush"] = new System.Windows.Media.SolidColorBrush(controlColor) { Opacity = 0.1 };
+            }
+            catch { }
 
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
@@ -1000,6 +938,9 @@ namespace MizuLauncher
                 {
                     ImgPlayerAvatar.Source = null; // 清空头像或显示默认占位
                 }
+
+                // 刷新文字颜色资源以适配可能的背景变化
+                UpdateBackgroundUIFromState();
                 
                 // 如果是“添加玩家”，禁用启动按钮
                 BtnLaunch.IsEnabled = _currentPlayerName != "添加玩家";
@@ -1141,8 +1082,6 @@ namespace MizuLauncher
             public string PlayerName { get; set; } = "添加玩家";
             public System.Collections.Generic.List<PlayerInfo>? Players { get; set; }
             public bool ShowDragHint { get; set; } = true;
-            public string? DeepSeekApiKey { get; set; }
-            public string? DeepSeekModel { get; set; }
         }
 
         #endregion
