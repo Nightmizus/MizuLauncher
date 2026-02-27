@@ -16,6 +16,10 @@ using CmlLib.Core.Installer;
 
 using System.Windows.Media.Animation;
 
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
+
 namespace MizuLauncher
 {
     public class PlayerInfo
@@ -183,6 +187,7 @@ namespace MizuLauncher
             DownloadContent.Visibility = Visibility.Collapsed;
             AIChatContent.Visibility = Visibility.Collapsed;
             MoreContent.Visibility = Visibility.Collapsed;
+            PlayerSeparator.Visibility = Visibility.Visible;
         }
 
         private void BtnDownload_Click(object sender, RoutedEventArgs e)
@@ -191,6 +196,7 @@ namespace MizuLauncher
             DownloadContent.Visibility = Visibility.Visible;
             AIChatContent.Visibility = Visibility.Collapsed;
             MoreContent.Visibility = Visibility.Collapsed;
+            PlayerSeparator.Visibility = Visibility.Collapsed;
         }
 
         private void BtnAIChat_Click(object sender, RoutedEventArgs e)
@@ -199,6 +205,7 @@ namespace MizuLauncher
             DownloadContent.Visibility = Visibility.Collapsed;
             AIChatContent.Visibility = Visibility.Visible;
             MoreContent.Visibility = Visibility.Collapsed;
+            PlayerSeparator.Visibility = Visibility.Collapsed;
         }
 
         private void BtnMore_Click(object sender, RoutedEventArgs e)
@@ -207,6 +214,7 @@ namespace MizuLauncher
             DownloadContent.Visibility = Visibility.Collapsed;
             AIChatContent.Visibility = Visibility.Collapsed;
             MoreContent.Visibility = Visibility.Visible;
+            PlayerSeparator.Visibility = Visibility.Collapsed;
         }
 
         #region Download Logic
@@ -585,15 +593,81 @@ namespace MizuLauncher
             }
         }
 
+        private void TxtGlmApiKey_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (sender is PasswordBox pb)
+            {
+                _glmApiKey = pb.Password;
+                SaveConfig();
+            }
+        }
+
+        private void ComboGlmModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem item)
+            {
+                _glmModel = item.Content.ToString() ?? "glm-4.7-flash";
+                SaveConfig();
+            }
+        }
+
+        private void ComboAiProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem item)
+            {
+                _aiProvider = item.Content.ToString() ?? "DeepSeek";
+                SaveConfig();
+            }
+        }
+
+        public CmlLib.Core.MinecraftPath? GetBaseMcPath() => _baseMcPath;
+        public CmlLib.Core.MinecraftLauncher? GetLauncher() => _launcher;
+        public void CallRefreshVersionList() => RefreshVersionList();
+
+        public void UpdateMainProgress(string status, double progress)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    TxtProgressStep.Text = status;
+                    if (progress >= 0)
+                        RectProgress.Width = Math.Clamp(progress, 0, 1) * BorderProgress.ActualWidth;
+                }
+                catch { }
+            });
+        }
+
         private async void BtnAIChatSend_Click(object sender, RoutedEventArgs e)
         {
             string userInput = TxtAIChatInput.Text.Trim();
             if (string.IsNullOrEmpty(userInput)) return;
 
-            if (string.IsNullOrEmpty(_deepSeekApiKey))
+            string currentModelId;
+            string currentApiKey;
+            Uri currentEndpoint;
+
+            if (_aiProvider.Contains("GLM"))
             {
-                MessageBox.Show("请先在“更多”页面设置 DeepSeek API Key。");
-                return;
+                if (string.IsNullOrEmpty(_glmApiKey))
+                {
+                    MessageBox.Show("请先在“更多”页面设置 GLM API Key。");
+                    return;
+                }
+                currentModelId = _glmModel;
+                currentApiKey = _glmApiKey;
+                currentEndpoint = new Uri("https://open.bigmodel.cn/api/paas/v4/");
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(_deepSeekApiKey))
+                {
+                    MessageBox.Show("请先在“更多”页面设置 DeepSeek API Key。");
+                    return;
+                }
+                currentModelId = _deepSeekModel;
+                currentApiKey = _deepSeekApiKey;
+                currentEndpoint = new Uri("https://api.deepseek.com/v1");
             }
 
             TxtAIResponse.Text = "思考中...";
@@ -601,8 +675,51 @@ namespace MizuLauncher
 
             try
             {
-                string aiResponse = await CallDeepSeekApi(userInput);
-                TxtAIResponse.Text = aiResponse;
+                // 获取当前选择的版本信息
+                string selectedVersion = ListVersions.SelectedItem?.ToString() ?? "未选择";
+                
+                // 构造系统提示词，包含当前环境信息
+                string systemPrompt = $@"你是一个专业的 Minecraft 启动器助手。
+当前用户选择的游戏版本是：{selectedVersion}。
+你的任务是帮助用户管理模组、解决问题，以及安装新的游戏版本或核心。
+
+当用户要求下载模组时：
+1. 必须先使用 SearchModAsync 搜索模组。
+2. 然后使用 GetModVersionsAsync 获取对应版本和加载器的版本列表。
+3. 最后选择正确的下载链接调用 DownloadModAsync。
+
+当用户要求安装新版本或核心时：
+1. 如果是安装纯净版，直接调用 InstallVanillaAsync。
+2. 如果是安装 Forge，先调用 GetForgeVersionsAsync 获取可用版本，然后调用 InstallForgeAsync。
+3. 如果用户没指定具体版本（如“安装 1.20.1”），默认安装纯净版；如果指定了核心（如“安装 1.20.1 的 forge”），则按需操作。
+
+请始终确保下载的模组版本与用户当前选择的游戏版本（{selectedVersion}）和加载器兼容。";
+
+                var builder = Kernel.CreateBuilder();
+                
+                // 使用 OpenAI 接口兼容 DeepSeek 或 GLM
+                builder.AddOpenAIChatCompletion(
+                    modelId: currentModelId,
+                    apiKey: currentApiKey,
+                    endpoint: currentEndpoint
+                );
+
+                builder.Plugins.AddFromObject(new MinecraftResourcePlugin(this));
+                var kernel = builder.Build();
+
+                // 开启自动函数调用
+                var executionSettings = new OpenAIPromptExecutionSettings 
+                { 
+                    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions 
+                };
+
+                var chatHistory = new ChatHistory(systemPrompt);
+                chatHistory.AddUserMessage(userInput);
+
+                var chatService = kernel.GetRequiredService<IChatCompletionService>();
+                var result = await chatService.GetChatMessageContentAsync(chatHistory, executionSettings, kernel);
+
+                TxtAIResponse.Text = result.Content ?? "无响应内容";
             }
             catch (Exception ex)
             {
@@ -618,37 +735,6 @@ namespace MizuLauncher
             }
         }
 
-        private async System.Threading.Tasks.Task<string> CallDeepSeekApi(string userInput)
-        {
-            using (var client = new System.Net.Http.HttpClient())
-            {
-                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _deepSeekApiKey);
-                
-                var requestBody = new
-                {
-                    model = _deepSeekModel,
-                    messages = new[] { new { role = "user", content = userInput } },
-                    stream = false
-                };
-
-                string json = JsonSerializer.Serialize(requestBody);
-                var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-                var response = await client.PostAsync("https://api.deepseek.com/v1/chat/completions", content);
-                string responseJson = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var doc = JsonDocument.Parse(responseJson);
-                    return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "无响应内容";
-                }
-                else
-                {
-                    return $"API 请求失败: {response.StatusCode}\n{responseJson}";
-                }
-            }
-        }
-
 
         private void RadioBg_Click(object sender, RoutedEventArgs e)
         {
@@ -656,7 +742,7 @@ namespace MizuLauncher
             {
                 if (rb == RadioMica) _currentBgType = 2;
                 else if (rb == RadioAcrylic) _currentBgType = 3;
-                else if (rb == RadioSolid) _currentBgType = 1;
+                else if (rb == RadioButtonSolid) _currentBgType = 1;
 
                 UpdateBackgroundUIFromState();
                 SaveConfig();
@@ -733,6 +819,11 @@ namespace MizuLauncher
         private bool _showDragHint = true;
         private string _deepSeekApiKey = "";
         private string _deepSeekModel = "deepseek-chat";
+        private string _glmApiKey = "";
+        private string _glmModel = "glm-4.7-flash";
+        private string _aiProvider = "DeepSeek";
+
+        private string GlmDesktopKeyPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "glm_api_key.txt");
 
         private void SaveConfig()
         {
@@ -747,10 +838,19 @@ namespace MizuLauncher
                     Players = OnlinePlayers.Concat(OfflinePlayers).ToList(),
                     ShowDragHint = _showDragHint,
                     DeepSeekApiKey = _deepSeekApiKey,
-                    DeepSeekModel = _deepSeekModel
+                    DeepSeekModel = _deepSeekModel,
+                    GlmApiKey = _glmApiKey,
+                    GlmModel = _glmModel,
+                    AiProvider = _aiProvider
                 };
                 string json = JsonSerializer.Serialize(config);
                 File.WriteAllText(ConfigFileName, json);
+
+                // 同步 API Key 到桌面
+                if (!string.IsNullOrEmpty(_glmApiKey))
+                {
+                    File.WriteAllText(GlmDesktopKeyPath, _glmApiKey);
+                }
             }
             catch (Exception ex)
             {
@@ -783,6 +883,15 @@ namespace MizuLauncher
                         _showDragHint = config.ShowDragHint;
                         _deepSeekApiKey = config.DeepSeekApiKey ?? "";
                         _deepSeekModel = config.DeepSeekModel ?? "deepseek-chat";
+                        _glmApiKey = config.GlmApiKey ?? "";
+                        _glmModel = config.GlmModel ?? "glm-4.7-flash";
+                        _aiProvider = config.AiProvider ?? "DeepSeek";
+
+                        // 尝试从桌面恢复 GLM API Key
+                        if (string.IsNullOrEmpty(_glmApiKey) && File.Exists(GlmDesktopKeyPath))
+                        {
+                            _glmApiKey = File.ReadAllText(GlmDesktopKeyPath).Trim();
+                        }
 
                         TxtDeepSeekApiKey.Password = _deepSeekApiKey;
                         foreach (ComboBoxItem item in ComboDeepSeekModel.Items)
@@ -790,6 +899,25 @@ namespace MizuLauncher
                             if (item.Content.ToString() == _deepSeekModel)
                             {
                                 ComboDeepSeekModel.SelectedItem = item;
+                                break;
+                            }
+                        }
+
+                        TxtGlmApiKey.Password = _glmApiKey;
+                        foreach (ComboBoxItem item in ComboGlmModel.Items)
+                        {
+                            if (item.Content.ToString() == _glmModel)
+                            {
+                                ComboGlmModel.SelectedItem = item;
+                                break;
+                            }
+                        }
+
+                        foreach (ComboBoxItem item in ComboAiProvider.Items)
+                        {
+                            if (item.Content.ToString() == _aiProvider)
+                            {
+                                ComboAiProvider.SelectedItem = item;
                                 break;
                             }
                         }
@@ -832,11 +960,11 @@ namespace MizuLauncher
 
         private void UpdateBackgroundUIFromState()
         {
-            if (RadioMica == null || RadioAcrylic == null || RadioSolid == null) return;
+            if (RadioMica == null || RadioAcrylic == null || RadioButtonSolid == null) return;
 
             if (_currentBgType == 2) RadioMica.IsChecked = true;
             else if (_currentBgType == 3) RadioAcrylic.IsChecked = true;
-            else if (_currentBgType == 1) RadioSolid.IsChecked = true;
+            else if (_currentBgType == 1) RadioButtonSolid.IsChecked = true;
             
             TxtCustomColor.Text = _currentCustomColor;
             CheckShowDragHint.IsChecked = _showDragHint;
@@ -1143,6 +1271,9 @@ namespace MizuLauncher
             public bool ShowDragHint { get; set; } = true;
             public string? DeepSeekApiKey { get; set; }
             public string? DeepSeekModel { get; set; }
+            public string? GlmApiKey { get; set; }
+            public string? GlmModel { get; set; }
+            public string? AiProvider { get; set; } = "DeepSeek";
         }
 
         #endregion
