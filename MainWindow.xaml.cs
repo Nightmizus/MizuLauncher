@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -824,6 +826,7 @@ namespace MizuLauncher
         private string _aiProvider = "DeepSeek";
 
         private string GlmDesktopKeyPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "glm_api_key.txt");
+        private string DeepSeekDesktopKeyPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "deepseek_api_key.txt");
 
         private void SaveConfig()
         {
@@ -850,6 +853,10 @@ namespace MizuLauncher
                 if (!string.IsNullOrEmpty(_glmApiKey))
                 {
                     File.WriteAllText(GlmDesktopKeyPath, _glmApiKey);
+                }
+                if (!string.IsNullOrEmpty(_deepSeekApiKey))
+                {
+                    File.WriteAllText(DeepSeekDesktopKeyPath, _deepSeekApiKey);
                 }
             }
             catch (Exception ex)
@@ -891,6 +898,12 @@ namespace MizuLauncher
                         if (string.IsNullOrEmpty(_glmApiKey) && File.Exists(GlmDesktopKeyPath))
                         {
                             _glmApiKey = File.ReadAllText(GlmDesktopKeyPath).Trim();
+                        }
+
+                        // 尝试从桌面恢复 DeepSeek API Key
+                        if (string.IsNullOrEmpty(_deepSeekApiKey) && File.Exists(DeepSeekDesktopKeyPath))
+                        {
+                            _deepSeekApiKey = File.ReadAllText(DeepSeekDesktopKeyPath).Trim();
                         }
 
                         TxtDeepSeekApiKey.Password = _deepSeekApiKey;
@@ -1559,6 +1572,170 @@ namespace MizuLauncher
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("Quick launch error: " + ex.Message);
+            }
+        }
+
+        private void BtnVersionSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (VersionSettingsPanel.Visibility == Visibility.Collapsed)
+            {
+                QuickLaunchPanel.Visibility = Visibility.Collapsed;
+                VersionSettingsPanel.Visibility = Visibility.Visible;
+                RefreshSavedConfigs();
+            }
+            else
+            {
+                QuickLaunchPanel.Visibility = Visibility.Visible;
+                VersionSettingsPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private string ConfigExportDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MizuLauncher_Configs");
+
+        private void RefreshSavedConfigs()
+        {
+            try
+            {
+                ComboSavedConfigs.Items.Clear();
+                string keybindsDir = Path.Combine(ConfigExportDir, "Keybinds");
+                if (Directory.Exists(keybindsDir))
+                {
+                    var dirs = Directory.GetDirectories(keybindsDir);
+                    foreach (var dir in dirs)
+                    {
+                        ComboSavedConfigs.Items.Add(Path.GetFileName(dir));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"刷新保存配置失败: {ex.Message}");
+            }
+        }
+
+        private void BtnExportConfig_Click(object sender, RoutedEventArgs e)
+        {
+            if (ListVersions.SelectedItem == null)
+            {
+                MessageBox.Show("请先在左侧选择一个版本。");
+                return;
+            }
+
+            string versionName = ListVersions.SelectedItem.ToString()!;
+            string optionsPath = Path.Combine(_baseMcPath!.BasePath, "versions", versionName, "options.txt");
+
+            if (!File.Exists(optionsPath))
+            {
+                MessageBox.Show($"在版本 {versionName} 中找不到 options.txt。");
+                return;
+            }
+
+            try
+            {
+                // 1. 导出全局 API Keys 到根目录
+                Directory.CreateDirectory(ConfigExportDir);
+                StringBuilder sb = new StringBuilder();
+                if (!string.IsNullOrEmpty(_deepSeekApiKey)) sb.AppendLine($"DeepSeekApiKey:{_deepSeekApiKey}");
+                if (!string.IsNullOrEmpty(_glmApiKey)) sb.AppendLine($"GlmApiKey:{_glmApiKey}");
+                File.WriteAllText(Path.Combine(ConfigExportDir, "apikeys.txt"), sb.ToString());
+
+                // 2. 导出键位到子目录
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string keybindsExportDir = Path.Combine(ConfigExportDir, "Keybinds", $"{versionName}_{timestamp}");
+                Directory.CreateDirectory(keybindsExportDir);
+
+                var lines = File.ReadAllLines(optionsPath);
+                var keybindLines = lines.Where(l => l.StartsWith("key_") || l.StartsWith("soundCategory_") || l.StartsWith("modelPart_")).ToList();
+                File.WriteAllLines(Path.Combine(keybindsExportDir, "keybinds.txt"), keybindLines);
+
+                MessageBox.Show($"配置已导出！\nAPI Key 已更新至根目录，键位已保存至 Keybinds\\{versionName}_{timestamp}");
+                RefreshSavedConfigs();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"导出失败: {ex.Message}");
+                WriteLog($"导出配置失败: {ex}");
+            }
+        }
+
+        private void BtnImportConfig_Click(object sender, RoutedEventArgs e)
+        {
+            if (ListVersions.SelectedItem == null)
+            {
+                MessageBox.Show("请先在左侧选择一个版本。");
+                return;
+            }
+
+            string versionName = ListVersions.SelectedItem.ToString()!;
+            string optionsPath = Path.Combine(_baseMcPath!.BasePath, "versions", versionName, "options.txt");
+
+            try
+            {
+                // 1. 自动导入全局 API Keys (如果存在)
+                string apiKeysFile = Path.Combine(ConfigExportDir, "apikeys.txt");
+                if (File.Exists(apiKeysFile))
+                {
+                    var apiLines = File.ReadAllLines(apiKeysFile);
+                    foreach (var line in apiLines)
+                    {
+                        var parts = line.Split(':', 2);
+                        if (parts.Length == 2)
+                        {
+                            string key = parts[0].Trim();
+                            string value = parts[1].Trim();
+                            if (key == "DeepSeekApiKey") 
+                            {
+                                _deepSeekApiKey = value;
+                                TxtDeepSeekApiKey.Password = value;
+                            }
+                            else if (key == "GlmApiKey") 
+                            {
+                                _glmApiKey = value;
+                                TxtGlmApiKey.Password = value;
+                            }
+                        }
+                    }
+                    SaveConfig();
+                }
+
+                // 2. 导入选中的键位配置
+                if (ComboSavedConfigs.SelectedItem != null)
+                {
+                    string configName = ComboSavedConfigs.SelectedItem.ToString()!;
+                    string keybindsFile = Path.Combine(ConfigExportDir, "Keybinds", configName, "keybinds.txt");
+
+                    if (File.Exists(keybindsFile))
+                    {
+                        var importKeybinds = File.ReadAllLines(keybindsFile)
+                            .Select(l => l.Split(':', 2))
+                            .Where(parts => parts.Length == 2)
+                            .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
+
+                        List<string> currentLines = File.Exists(optionsPath) 
+                            ? File.ReadAllLines(optionsPath).ToList() 
+                            : new List<string>();
+
+                        var currentSettings = currentLines
+                            .Select(l => l.Split(':', 2))
+                            .Where(parts => parts.Length == 2)
+                            .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
+
+                        foreach (var kvp in importKeybinds)
+                        {
+                            currentSettings[kvp.Key] = kvp.Value;
+                        }
+
+                        var newLines = currentSettings.Select(kvp => $"{kvp.Key}:{kvp.Value}");
+                        File.WriteAllLines(optionsPath, newLines);
+                    }
+                }
+
+                MessageBox.Show("配置导入完成！API Key 已全局更新，键位已合并至当前版本。");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"导入失败: {ex.Message}");
+                WriteLog($"导入配置失败: {ex}");
             }
         }
 
